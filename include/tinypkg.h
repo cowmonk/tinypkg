@@ -1,13 +1,5 @@
 /*
  * TinyPkg - Lightweight Source-Based Package Manager for Linux
- * Copyright (c) 2025 TinyPkg Development Team
- * 
- * This file is part of TinyPkg.
- * 
- * TinyPkg is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
  */
 
 #ifndef TINYPKG_H
