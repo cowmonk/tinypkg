@@ -1,4 +1,23 @@
-# TinyPkg Advanced Features and Architecture
+<div align="center">
+  <img src="https://raw.githubusercontent.com/user7210unix/user7210unix/refs/heads/main/pfp.png" width="200" height="200" style="border-radius:50%; border: 4px solid #333;">
+  <p>
+
+<div align="center">
+
+# TinyPkg — A Work-in-Progress Linux Source-Based Package Manager
+
+<!-- WIP badge (top, centered) -->
+<p align="center">
+  <img src="https://img.shields.io/badge/🚧%20work%20in%20progress-orange?style=for-the-badge&labelColor=1f2937">
+</p>
+
+<!-- Linux + License badges (same row) -->
+<p align="center">
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black">
+  <img src="https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge&logo=gnu&logoColor=white">
+</p>
+
+</div>
 
 ## Architecture Overview
 
@@ -18,6 +37,7 @@ TinyPkg follows a modular architecture with clear separation of concerns:
 │                  Linux Kernel                           │
 └─────────────────────────────────────────────────────────┘
 ```
+<div align="left">
 
 ## Directory Structure Standards
 
