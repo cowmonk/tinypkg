@@ -19,6 +19,8 @@
 
 </div>
 
+<p align="center">
+
 ## Architecture Overview
 
 TinyPkg follows a modular architecture with clear separation of concerns:
