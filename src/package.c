@@ -10,77 +10,92 @@ static package_db_entry_t *package_db_head = NULL;
 static int package_db_loaded = 0;
 
 // Package installation function
-int package_install(const char *package_name) {
+int package_install(const char *package_name)
+{
     package_t *pkg = NULL;
     int result = TINYPKG_SUCCESS;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         log_error("Package name is NULL");
         return TINYPKG_ERROR;
     }
-    
+
     log_info("Starting installation of package: %s", package_name);
-    
+
     // Check if already installed
-    if (package_is_installed(package_name)) {
-        if (!global_config->force_mode) {
+    if (package_is_installed(package_name))
+    {
+        if (!global_config->force_mode)
+        {
             log_warn("Package '%s' is already installed", package_name);
             return TINYPKG_SUCCESS;
         }
         log_info("Force mode enabled, reinstalling package");
     }
-    
+
     // Load package information
     pkg = package_load_info(package_name);
-    if (!pkg) {
+    if (!pkg)
+    {
         log_error("Failed to load package information: %s", package_name);
         return TINYPKG_ERROR;
     }
-    
+
     // Validate package
     result = package_validate(pkg);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Package validation failed: %s", package_name);
         package_free(pkg);
         return result;
     }
-    
+
     // Check conflicts
     result = package_check_conflicts(pkg);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Package conflicts detected: %s", package_name);
         package_free(pkg);
         return result;
     }
-    
+
     // Set package state
     package_set_state(package_name, PKG_STATE_DOWNLOADING);
-    
+
     // Install dependencies first
-    if (!global_config->skip_dependencies && pkg->dependencies) {
+    if (!global_config->skip_dependencies && pkg->dependencies)
+    {
         log_info("Resolving dependencies for %s", package_name);
-        
+
         char **install_order = NULL;
         int install_count = 0;
-        
-        result = dependency_resolve(package_name, &install_order, &install_count);
-        if (result != TINYPKG_SUCCESS) {
+
+        result =
+            dependency_resolve(package_name, &install_order, &install_count);
+        if (result != TINYPKG_SUCCESS)
+        {
             log_error("Dependency resolution failed for %s", package_name);
             package_set_state(package_name, PKG_STATE_FAILED);
             package_free(pkg);
             return result;
         }
-        
+
         // Install dependencies in order
-        for (int i = 0; i < install_count - 1; i++) { // -1 to skip the package itself
-            if (!package_is_installed(install_order[i])) {
+        for (int i = 0; i < install_count - 1; i++)
+        { // -1 to skip the package itself
+            if (!package_is_installed(install_order[i]))
+            {
                 log_info("Installing dependency: %s", install_order[i]);
                 result = package_install(install_order[i]);
-                if (result != TINYPKG_SUCCESS) {
-                    log_error("Failed to install dependency: %s", install_order[i]);
+                if (result != TINYPKG_SUCCESS)
+                {
+                    log_error("Failed to install dependency: %s",
+                              install_order[i]);
                     package_set_state(package_name, PKG_STATE_FAILED);
                     // Free install_order
-                    for (int j = 0; j < install_count; j++) {
+                    for (int j = 0; j < install_count; j++)
+                    {
                         TINYPKG_FREE(install_order[j]);
                     }
                     TINYPKG_FREE(install_order);
@@ -89,271 +104,313 @@ int package_install(const char *package_name) {
                 }
             }
         }
-        
+
         // Free install_order
-        for (int i = 0; i < install_count; i++) {
+        for (int i = 0; i < install_count; i++)
+        {
             TINYPKG_FREE(install_order[i]);
         }
         TINYPKG_FREE(install_order);
     }
-    
+
     // Build and install the package
     package_set_state(package_name, PKG_STATE_BUILDING);
-    
+
     result = build_package(pkg);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Package build failed: %s", package_name);
         package_set_state(package_name, PKG_STATE_FAILED);
         package_free(pkg);
         return result;
     }
-    
+
     package_set_state(package_name, PKG_STATE_INSTALLING);
-    
+
     // Install the built package
     result = build_install_package(pkg);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Package installation failed: %s", package_name);
         package_set_state(package_name, PKG_STATE_FAILED);
         package_free(pkg);
         return result;
     }
-    
+
     // Update package database
     pkg->install_time = time(NULL);
     package_set_state(package_name, PKG_STATE_INSTALLED);
-    
+
     result = package_db_add(pkg);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_warn("Failed to update package database for %s", package_name);
     }
-    
+
     // Run post-install commands
-    if (strlen(pkg->post_install_cmd) > 0) {
+    if (strlen(pkg->post_install_cmd) > 0)
+    {
         log_info("Running post-install commands for %s", package_name);
         result = utils_run_command(pkg->post_install_cmd, NULL);
-        if (result != TINYPKG_SUCCESS) {
+        if (result != TINYPKG_SUCCESS)
+        {
             log_warn("Post-install commands failed for %s", package_name);
         }
     }
-    
+
     log_info("Package '%s' installed successfully", package_name);
     package_free(pkg);
     return TINYPKG_SUCCESS;
 }
 
-int package_remove(const char *package_name) {
+int package_remove(const char *package_name)
+{
     package_db_entry_t *db_entry;
     int result;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     log_info("Removing package: %s", package_name);
-    
+
     // Check if installed
-    if (!package_is_installed(package_name)) {
+    if (!package_is_installed(package_name))
+    {
         log_warn("Package '%s' is not installed", package_name);
         return TINYPKG_SUCCESS;
     }
-    
+
     // Find package in database
     db_entry = package_db_find(package_name);
-    if (!db_entry) {
+    if (!db_entry)
+    {
         log_error("Package '%s' not found in database", package_name);
         return TINYPKG_ERROR;
     }
-    
+
     // Check for packages that depend on this one
-    if (!global_config->force_mode) {
+    if (!global_config->force_mode)
+    {
         char **dependents = NULL;
         int dependent_count = 0;
-        
-        result = dependency_find_dependents(package_name, &dependents, &dependent_count);
-        if (result == TINYPKG_SUCCESS && dependent_count > 0) {
-            log_error("Cannot remove '%s': required by %d other package(s):", 
-                     package_name, dependent_count);
-            for (int i = 0; i < dependent_count; i++) {
+
+        result = dependency_find_dependents(package_name, &dependents,
+                                            &dependent_count);
+        if (result == TINYPKG_SUCCESS && dependent_count > 0)
+        {
+            log_error("Cannot remove '%s': required by %d other package(s):",
+                      package_name, dependent_count);
+            for (int i = 0; i < dependent_count; i++)
+            {
                 log_error("  - %s", dependents[i]);
                 TINYPKG_FREE(dependents[i]);
             }
             TINYPKG_FREE(dependents);
             return TINYPKG_ERROR_DEPENDENCY;
         }
-        
-        if (dependents) {
+
+        if (dependents)
+        {
             TINYPKG_FREE(dependents);
         }
     }
-    
+
     // Get file list for removal
     char **file_list = NULL;
     int file_count = 0;
-    
+
     file_list = package_get_file_list(package_name, &file_count);
-    if (file_list) {
+    if (file_list)
+    {
         log_info("Removing %d files for package %s", file_count, package_name);
-        
+
         // Remove files in reverse order (deepest first)
-        for (int i = file_count - 1; i >= 0; i--) {
-            if (unlink(file_list[i]) != 0 && errno != ENOENT) {
-                log_warn("Failed to remove file: %s (%s)", file_list[i], strerror(errno));
+        for (int i = file_count - 1; i >= 0; i--)
+        {
+            if (unlink(file_list[i]) != 0 && errno != ENOENT)
+            {
+                log_warn("Failed to remove file: %s (%s)", file_list[i],
+                         strerror(errno));
             }
             TINYPKG_FREE(file_list[i]);
         }
         TINYPKG_FREE(file_list);
     }
-    
+
     // Remove from package database
     result = package_db_remove(package_name);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_warn("Failed to remove package from database: %s", package_name);
     }
-    
+
     log_info("Package '%s' removed successfully", package_name);
     return TINYPKG_SUCCESS;
 }
 
-int package_update(const char *package_name) {
+int package_update(const char *package_name)
+{
     package_t *current_pkg = NULL;
     package_t *new_pkg = NULL;
     version_t current_version, new_version;
     int result;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     log_info("Updating package: %s", package_name);
-    
+
     // Check if installed
-    if (!package_is_installed(package_name)) {
-        log_info("Package '%s' not installed, installing instead", package_name);
+    if (!package_is_installed(package_name))
+    {
+        log_info("Package '%s' not installed, installing instead",
+                 package_name);
         return package_install(package_name);
     }
-    
+
     // Get current version
     package_db_entry_t *db_entry = package_db_find(package_name);
-    if (!db_entry) {
+    if (!db_entry)
+    {
         log_error("Package '%s' not found in database", package_name);
         return TINYPKG_ERROR;
     }
-    
+
     // Load new package information
     new_pkg = package_load_info(package_name);
-    if (!new_pkg) {
+    if (!new_pkg)
+    {
         log_error("Failed to load package information: %s", package_name);
         return TINYPKG_ERROR;
     }
-    
+
     // Compare versions
     result = version_parse(db_entry->version, &current_version);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Failed to parse current version: %s", db_entry->version);
         package_free(new_pkg);
         return result;
     }
-    
+
     result = version_parse(new_pkg->version, &new_version);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Failed to parse new version: %s", new_pkg->version);
         package_free(new_pkg);
         return result;
     }
-    
+
     int version_cmp = version_compare(&current_version, &new_version);
-    if (version_cmp >= 0 && !global_config->force_mode) {
-        log_info("Package '%s' is already up to date (version %s)", 
-                package_name, db_entry->version);
+    if (version_cmp >= 0 && !global_config->force_mode)
+    {
+        log_info("Package '%s' is already up to date (version %s)",
+                 package_name, db_entry->version);
         package_free(new_pkg);
         return TINYPKG_SUCCESS;
     }
-    
-    log_info("Updating package '%s' from version %s to %s", 
-             package_name, db_entry->version, new_pkg->version);
-    
+
+    log_info("Updating package '%s' from version %s to %s", package_name,
+             db_entry->version, new_pkg->version);
+
     // Backup config files
     package_backup_config_files(new_pkg);
-    
+
     // Remove old version
     result = package_remove(package_name);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Failed to remove old version of %s", package_name);
         package_free(new_pkg);
         return result;
     }
-    
+
     // Install new version
     result = package_install(package_name);
-    if (result != TINYPKG_SUCCESS) {
+    if (result != TINYPKG_SUCCESS)
+    {
         log_error("Failed to install new version of %s", package_name);
         // Try to restore old version if possible
         log_info("Attempting to restore previous version...");
         package_free(new_pkg);
         return result;
     }
-    
+
     // Restore config files
     package_restore_config_files(new_pkg);
-    
+
     package_free(new_pkg);
     log_info("Package '%s' updated successfully", package_name);
     return TINYPKG_SUCCESS;
 }
 
-int package_update_all(void) {
+int package_update_all(void)
+{
     package_db_entry_t *entry;
     int updated_count = 0;
     int failed_count = 0;
-    
+
     log_info("Updating all installed packages");
-    
+
     // Ensure database is loaded
-    if (package_db_load() != TINYPKG_SUCCESS) {
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
         log_error("Failed to load package database");
         return TINYPKG_ERROR;
     }
-    
+
     entry = package_db_head;
-    while (entry) {
+    while (entry)
+    {
         int result = package_update(entry->name);
-        if (result == TINYPKG_SUCCESS) {
+        if (result == TINYPKG_SUCCESS)
+        {
             updated_count++;
-        } else {
+        }
+        else
+        {
             failed_count++;
             log_warn("Failed to update package: %s", entry->name);
         }
         entry = entry->next;
     }
-    
-    log_info("Package update completed: %d updated, %d failed", updated_count, failed_count);
-    
-    if (failed_count > 0) {
+
+    log_info("Package update completed: %d updated, %d failed", updated_count,
+             failed_count);
+
+    if (failed_count > 0)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     return TINYPKG_SUCCESS;
 }
 
-int package_query(const char *package_name) {
+int package_query(const char *package_name)
+{
     package_t *pkg;
     package_db_entry_t *db_entry;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     // Load package information
     pkg = package_load_info(package_name);
-    if (!pkg) {
+    if (!pkg)
+    {
         printf("Package '%s' not found in repository\n", package_name);
         return TINYPKG_ERROR;
     }
-    
+
     // Check if installed
     db_entry = package_db_find(package_name);
-    
+
     printf("Package: %s\n", pkg->name);
     printf("Version: %s\n", pkg->version);
     printf("Description: %s\n", pkg->description);
@@ -362,279 +419,348 @@ int package_query(const char *package_name) {
     printf("License: %s\n", pkg->license);
     printf("Category: %s\n", pkg->category);
     printf("Source URL: %s\n", pkg->source_url);
-    
-    if (pkg->size_estimate > 0) {
+
+    if (pkg->size_estimate > 0)
+    {
         printf("Estimated Size: ");
         utils_format_size(pkg->size_estimate);
         printf("\n");
     }
-    
-    if (pkg->build_time_estimate > 0) {
+
+    if (pkg->build_time_estimate > 0)
+    {
         printf("Build Time: %d seconds\n", pkg->build_time_estimate);
     }
-    
+
     printf("Status: ");
-    if (db_entry) {
+    if (db_entry)
+    {
         printf("Installed (version %s, installed on ", db_entry->version);
         utils_format_time(db_entry->install_time);
         printf(")\n");
-        
-        if (db_entry->installed_size > 0) {
+
+        if (db_entry->installed_size > 0)
+        {
             printf("Installed Size: ");
             utils_format_size(db_entry->installed_size);
             printf("\n");
         }
-    } else {
+    }
+    else
+    {
         printf("Not installed\n");
     }
-    
-    if (pkg->dep_count > 0) {
+
+    if (pkg->dep_count > 0)
+    {
         printf("Dependencies (%d): ", pkg->dep_count);
-        for (int i = 0; i < pkg->dep_count; i++) {
+        for (int i = 0; i < pkg->dep_count; i++)
+        {
             printf("%s", pkg->dependencies[i]);
-            if (i < pkg->dep_count - 1) printf(", ");
+            if (i < pkg->dep_count - 1)
+                printf(", ");
         }
         printf("\n");
     }
-    
-    if (pkg->conflict_count > 0) {
+
+    if (pkg->conflict_count > 0)
+    {
         printf("Conflicts (%d): ", pkg->conflict_count);
-        for (int i = 0; i < pkg->conflict_count; i++) {
+        for (int i = 0; i < pkg->conflict_count; i++)
+        {
             printf("%s", pkg->conflicts[i]);
-            if (i < pkg->conflict_count - 1) printf(", ");
+            if (i < pkg->conflict_count - 1)
+                printf(", ");
         }
         printf("\n");
     }
-    
-    if (pkg->provides_count > 0) {
+
+    if (pkg->provides_count > 0)
+    {
         printf("Provides (%d): ", pkg->provides_count);
-        for (int i = 0; i < pkg->provides_count; i++) {
+        for (int i = 0; i < pkg->provides_count; i++)
+        {
             printf("%s", pkg->provides[i]);
-            if (i < pkg->provides_count - 1) printf(", ");
+            if (i < pkg->provides_count - 1)
+                printf(", ");
         }
         printf("\n");
     }
-    
+
     package_free(pkg);
     return TINYPKG_SUCCESS;
 }
 
-int package_list(const char *pattern) {
+int package_list(const char *pattern)
+{
     package_db_entry_t *entry;
     int count = 0;
-    
+
     // Ensure database is loaded
-    if (package_db_load() != TINYPKG_SUCCESS) {
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
         log_error("Failed to load package database");
         return TINYPKG_ERROR;
     }
-    
+
     printf("Installed packages:\n");
-    printf("%-20s %-12s %-50s %s\n", "Name", "Version", "Description", "Installed");
-    printf("%.80s\n", "--------------------------------------------------------------------------------");
-    
+    printf("%-20s %-12s %-50s %s\n", "Name", "Version", "Description",
+           "Installed");
+    printf("%.80s\n", "--------------------------------------------------------"
+                      "------------------------");
+
     entry = package_db_head;
-    while (entry) {
-        if (!pattern || strstr(entry->name, pattern) || strstr(entry->description, pattern)) {
-            printf("%-20s %-12s %-50.50s ", entry->name, entry->version, entry->description);
+    while (entry)
+    {
+        if (!pattern || strstr(entry->name, pattern) ||
+            strstr(entry->description, pattern))
+        {
+            printf("%-20s %-12s %-50.50s ", entry->name, entry->version,
+                   entry->description);
             utils_format_time(entry->install_time);
             printf("\n");
             count++;
         }
         entry = entry->next;
     }
-    
+
     printf("\nTotal: %d packages\n", count);
     return TINYPKG_SUCCESS;
 }
 
-int package_search(const char *pattern) {
+int package_search(const char *pattern)
+{
     // This would search through the repository
     // For now, simplified implementation
     printf("Searching for packages matching: %s\n", pattern);
-    
+
     // Search through repository files
     char search_cmd[MAX_CMD];
-    snprintf(search_cmd, sizeof(search_cmd), 
-             "find %s -name '*.json' -exec grep -l '%s' {} \\;", 
-             REPO_DIR, pattern);
-    
+    snprintf(search_cmd, sizeof(search_cmd),
+             "find %s -name '*.json' -exec grep -l '%s' {} \\;", REPO_DIR,
+             pattern);
+
     return utils_run_command(search_cmd, NULL);
 }
 
-package_t *package_load_info(const char *package_name) {
-    if (!package_name) {
+package_t *package_load_info(const char *package_name)
+{
+    if (!package_name)
+    {
         return NULL;
     }
-    
+
     return json_parser_load_package(package_name);
 }
 
-int package_is_installed(const char *package_name) {
-    if (package_db_load() != TINYPKG_SUCCESS) {
+int package_is_installed(const char *package_name)
+{
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
         return 0;
     }
-    
+
     return (package_db_find(package_name) != NULL);
 }
 
 // Package database operations
-int package_db_add(const package_t *pkg) {
+int package_db_add(const package_t *pkg)
+{
     package_db_entry_t *entry;
-    
-    if (!pkg) {
+
+    if (!pkg)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     // Remove existing entry if present
     package_db_remove(pkg->name);
-    
+
     // Create new entry
     entry = TINYPKG_CALLOC(1, sizeof(package_db_entry_t));
-    if (!entry) {
+    if (!entry)
+    {
         return TINYPKG_ERROR_MEMORY;
     }
-    
+
     strncpy(entry->name, pkg->name, sizeof(entry->name) - 1);
     strncpy(entry->version, pkg->version, sizeof(entry->version) - 1);
-    strncpy(entry->description, pkg->description, sizeof(entry->description) - 1);
+    strncpy(entry->description, pkg->description,
+            sizeof(entry->description) - 1);
     entry->install_time = pkg->install_time;
     entry->installed_size = pkg->size_estimate; // This should be calculated
     entry->state = PKG_STATE_INSTALLED;
-    
+
     // Add to linked list
     entry->next = package_db_head;
     package_db_head = entry;
-    
+
     // Save database
     return package_db_save();
 }
 
-int package_db_remove(const char *package_name) {
+int package_db_remove(const char *package_name)
+{
     package_db_entry_t *entry, *prev = NULL;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         return TINYPKG_ERROR;
     }
-    
+
     entry = package_db_head;
-    while (entry) {
-        if (TINYPKG_STREQ(entry->name, package_name)) {
-            if (prev) {
+    while (entry)
+    {
+        if (TINYPKG_STREQ(entry->name, package_name))
+        {
+            if (prev)
+            {
                 prev->next = entry->next;
-            } else {
+            }
+            else
+            {
                 package_db_head = entry->next;
             }
-            
+
             package_db_entry_free(entry);
             return package_db_save();
         }
         prev = entry;
         entry = entry->next;
     }
-    
+
     return TINYPKG_SUCCESS; // Not found, but not an error
 }
 
-package_db_entry_t *package_db_find(const char *package_name) {
+package_db_entry_t *package_db_find(const char *package_name)
+{
     package_db_entry_t *entry;
-    
-    if (!package_name) {
+
+    if (!package_name)
+    {
         return NULL;
     }
-    
+
     entry = package_db_head;
-    while (entry) {
-        if (TINYPKG_STREQ(entry->name, package_name)) {
+    while (entry)
+    {
+        if (TINYPKG_STREQ(entry->name, package_name))
+        {
             return entry;
         }
         entry = entry->next;
     }
-    
+
     return NULL;
 }
 
-int package_db_save(void) {
+package_db_entry_t *package_db_get_all(void)
+{
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
+        return NULL;
+    }
+    return package_db_head;
+}
+
+int package_db_save(void)
+{
     char db_file[MAX_PATH];
     FILE *fp;
     package_db_entry_t *entry;
-    
+
     snprintf(db_file, sizeof(db_file), "%s/installed.txt", LIB_DIR);
-    
+
     fp = fopen(db_file, "w");
-    if (!fp) {
+    if (!fp)
+    {
         log_error("Failed to open database file for writing: %s", db_file);
         return TINYPKG_ERROR_FILE;
     }
-    
+
     fprintf(fp, "# TinyPkg Installed Packages Database\n");
-    fprintf(fp, "# Format: name\tversion\tdescription\tinstall_time\tinstalled_size\tstate\n");
-    
+    fprintf(
+        fp,
+        "# Format: "
+        "name\tversion\tdescription\tinstall_time\tinstalled_size\tstate\n");
+
     entry = package_db_head;
-    while (entry) {
-        fprintf(fp, "%s\t%s\t%s\t%ld\t%zu\t%d\n",
-                entry->name, entry->version, entry->description,
-                entry->install_time, entry->installed_size, entry->state);
+    while (entry)
+    {
+        fprintf(fp, "%s\t%s\t%s\t%ld\t%zu\t%d\n", entry->name, entry->version,
+                entry->description, entry->install_time, entry->installed_size,
+                entry->state);
         entry = entry->next;
     }
-    
+
     fclose(fp);
     return TINYPKG_SUCCESS;
 }
 
-int package_db_load(void) {
+int package_db_load(void)
+{
     char db_file[MAX_PATH];
     FILE *fp;
     char line[1024];
     package_db_entry_t *entry;
-    
-    if (package_db_loaded) {
+
+    if (package_db_loaded)
+    {
         return TINYPKG_SUCCESS;
     }
-    
+
     snprintf(db_file, sizeof(db_file), "%s/installed.txt", LIB_DIR);
-    
+
     fp = fopen(db_file, "r");
-    if (!fp) {
+    if (!fp)
+    {
         // Database doesn't exist yet, not an error
         package_db_loaded = 1;
         return TINYPKG_SUCCESS;
     }
-    
-    while (fgets(line, sizeof(line), fp)) {
+
+    while (fgets(line, sizeof(line), fp))
+    {
         // Skip comments and empty lines
-        if (line[0] == '#' || line[0] == '\n') {
+        if (line[0] == '#' || line[0] == '\n')
+        {
             continue;
         }
-        
+
         entry = TINYPKG_CALLOC(1, sizeof(package_db_entry_t));
-        if (!entry) {
+        if (!entry)
+        {
             fclose(fp);
             return TINYPKG_ERROR_MEMORY;
         }
-        
-        int fields = sscanf(line, "%255s\t%63s\t%511[^\t]\t%ld\t%zu\t%d",
-                           entry->name, entry->version, entry->description,
-                           &entry->install_time, &entry->installed_size, 
-                           (int*)&entry->state);
-        
-        if (fields >= 3) { // Minimum required fields
+
+        int fields =
+            sscanf(line, "%255s\t%63s\t%511[^\t]\t%ld\t%zu\t%d", entry->name,
+                   entry->version, entry->description, &entry->install_time,
+                   &entry->installed_size, (int *)&entry->state);
+
+        if (fields >= 3)
+        { // Minimum required fields
             entry->next = package_db_head;
             package_db_head = entry;
-        } else {
+        }
+        else
+        {
             package_db_entry_free(entry);
         }
     }
-    
+
     fclose(fp);
     package_db_loaded = 1;
     return TINYPKG_SUCCESS;
 }
 
 // Memory management functions
-package_t *package_create(void) {
+package_t *package_create(void)
+{
     package_t *pkg = TINYPKG_CALLOC(1, sizeof(package_t));
-    if (pkg) {
+    if (pkg)
+    {
         pkg->ref_count = 1;
         pkg->state = PKG_STATE_UNKNOWN;
         pkg->build_system = BUILD_TYPE_AUTOTOOLS;
@@ -642,133 +768,647 @@ package_t *package_create(void) {
     return pkg;
 }
 
-void package_free(package_t *pkg) {
-    if (!pkg) return;
-    
+void package_free(package_t *pkg)
+{
+    if (!pkg)
+        return;
+
     pkg->ref_count--;
-    if (pkg->ref_count > 0) return;
-    
+    if (pkg->ref_count > 0)
+        return;
+
     // Free string arrays
-    if (pkg->dependencies) {
-        for (int i = 0; i < pkg->dep_count; i++) {
+    if (pkg->dependencies)
+    {
+        for (int i = 0; i < pkg->dep_count; i++)
+        {
             TINYPKG_FREE(pkg->dependencies[i]);
         }
         TINYPKG_FREE(pkg->dependencies);
     }
-    
-    if (pkg->build_dependencies) {
-        for (int i = 0; i < pkg->build_dep_count; i++) {
+
+    if (pkg->build_dependencies)
+    {
+        for (int i = 0; i < pkg->build_dep_count; i++)
+        {
             TINYPKG_FREE(pkg->build_dependencies[i]);
         }
         TINYPKG_FREE(pkg->build_dependencies);
     }
-    
-    if (pkg->conflicts) {
-        for (int i = 0; i < pkg->conflict_count; i++) {
+
+    if (pkg->conflicts)
+    {
+        for (int i = 0; i < pkg->conflict_count; i++)
+        {
             TINYPKG_FREE(pkg->conflicts[i]);
         }
         TINYPKG_FREE(pkg->conflicts);
     }
-    
-    if (pkg->provides) {
-        for (int i = 0; i < pkg->provides_count; i++) {
+
+    if (pkg->provides)
+    {
+        for (int i = 0; i < pkg->provides_count; i++)
+        {
             TINYPKG_FREE(pkg->provides[i]);
         }
         TINYPKG_FREE(pkg->provides);
     }
-    
+
     TINYPKG_FREE(pkg);
 }
 
-void package_db_entry_free(package_db_entry_t *entry) {
-    TINYPKG_FREE(entry);
-}
+void package_db_entry_free(package_db_entry_t *entry) { TINYPKG_FREE(entry); }
 
 // Validation functions
-int package_validate(const package_t *pkg) {
-    if (!pkg) {
+int package_validate(const package_t *pkg)
+{
+    if (!pkg)
+    {
         return TINYPKG_ERROR;
     }
-    
-    if (strlen(pkg->name) == 0) {
+
+    if (strlen(pkg->name) == 0)
+    {
         log_error("Package name is empty");
         return TINYPKG_ERROR;
     }
-    
-    if (strlen(pkg->version) == 0) {
+
+    if (strlen(pkg->version) == 0)
+    {
         log_error("Package version is empty");
         return TINYPKG_ERROR;
     }
-    
-    if (strlen(pkg->source_url) == 0) {
+
+    if (strlen(pkg->source_url) == 0)
+    {
         log_error("Package source URL is empty");
         return TINYPKG_ERROR;
     }
-    
+
     return TINYPKG_SUCCESS;
 }
 
-int package_check_conflicts(const package_t *pkg) {
-    if (!pkg || !pkg->conflicts) {
+int package_check_conflicts(const package_t *pkg)
+{
+    if (!pkg || !pkg->conflicts)
+    {
         return TINYPKG_SUCCESS;
     }
-    
-    for (int i = 0; i < pkg->conflict_count; i++) {
-        if (package_is_installed(pkg->conflicts[i])) {
-            log_error("Package '%s' conflicts with installed package '%s'", 
-                     pkg->name, pkg->conflicts[i]);
+
+    for (int i = 0; i < pkg->conflict_count; i++)
+    {
+        if (package_is_installed(pkg->conflicts[i]))
+        {
+            log_error("Package '%s' conflicts with installed package '%s'",
+                      pkg->name, pkg->conflicts[i]);
             return TINYPKG_ERROR_DEPENDENCY;
         }
     }
-    
+
     return TINYPKG_SUCCESS;
 }
 
 // State management
-const char *package_state_to_string(package_state_t state) {
-    switch (state) {
-        case PKG_STATE_UNKNOWN: return "unknown";
-        case PKG_STATE_AVAILABLE: return "available";
-        case PKG_STATE_DOWNLOADING: return "downloading";
-        case PKG_STATE_BUILDING: return "building";
-        case PKG_STATE_INSTALLING: return "installing";
-        case PKG_STATE_INSTALLED: return "installed";
-        case PKG_STATE_FAILED: return "failed";
-        case PKG_STATE_BROKEN: return "broken";
-        default: return "invalid";
+const char *package_state_to_string(package_state_t state)
+{
+    switch (state)
+    {
+    case PKG_STATE_UNKNOWN:
+        return "unknown";
+    case PKG_STATE_AVAILABLE:
+        return "available";
+    case PKG_STATE_DOWNLOADING:
+        return "downloading";
+    case PKG_STATE_BUILDING:
+        return "building";
+    case PKG_STATE_INSTALLING:
+        return "installing";
+    case PKG_STATE_INSTALLED:
+        return "installed";
+    case PKG_STATE_FAILED:
+        return "failed";
+    case PKG_STATE_BROKEN:
+        return "broken";
+    default:
+        return "invalid";
     }
 }
 
-package_state_t package_state_from_string(const char *state_str) {
-    if (!state_str) return PKG_STATE_UNKNOWN;
-    
-    if (TINYPKG_STREQ(state_str, "available")) return PKG_STATE_AVAILABLE;
-    if (TINYPKG_STREQ(state_str, "downloading")) return PKG_STATE_DOWNLOADING;
-    if (TINYPKG_STREQ(state_str, "building")) return PKG_STATE_BUILDING;
-    if (TINYPKG_STREQ(state_str, "installing")) return PKG_STATE_INSTALLING;
-    if (TINYPKG_STREQ(state_str, "installed")) return PKG_STATE_INSTALLED;
-    if (TINYPKG_STREQ(state_str, "failed")) return PKG_STATE_FAILED;
-    if (TINYPKG_STREQ(state_str, "broken")) return PKG_STATE_BROKEN;
-    
+package_state_t package_state_from_string(const char *state_str)
+{
+    if (!state_str)
+        return PKG_STATE_UNKNOWN;
+
+    if (TINYPKG_STREQ(state_str, "available"))
+        return PKG_STATE_AVAILABLE;
+    if (TINYPKG_STREQ(state_str, "downloading"))
+        return PKG_STATE_DOWNLOADING;
+    if (TINYPKG_STREQ(state_str, "building"))
+        return PKG_STATE_BUILDING;
+    if (TINYPKG_STREQ(state_str, "installing"))
+        return PKG_STATE_INSTALLING;
+    if (TINYPKG_STREQ(state_str, "installed"))
+        return PKG_STATE_INSTALLED;
+    if (TINYPKG_STREQ(state_str, "failed"))
+        return PKG_STATE_FAILED;
+    if (TINYPKG_STREQ(state_str, "broken"))
+        return PKG_STATE_BROKEN;
+
     return PKG_STATE_UNKNOWN;
 }
 
-int package_set_state(const char *package_name, package_state_t state) {
+int package_set_state(const char *package_name, package_state_t state)
+{
     package_db_entry_t *entry = package_db_find(package_name);
-    if (entry) {
+    if (entry)
+    {
         entry->state = state;
         return package_db_save();
     }
-    
+
     // Package not in database yet, just log the state change
-    log_debug("State change for %s: %s", package_name, package_state_to_string(state));
+    log_debug("State change for %s: %s", package_name,
+              package_state_to_string(state));
     return TINYPKG_SUCCESS;
 }
 
-package_state_t package_get_state(const char *package_name) {
+package_state_t package_get_state(const char *package_name)
+{
     package_db_entry_t *entry = package_db_find(package_name);
-    if (entry) {
+    if (entry)
+    {
         return entry->state;
     }
     return PKG_STATE_UNKNOWN;
+}
+
+// Version handling
+int version_parse(const char *version_str, version_t *version)
+{
+    if (!version_str || !version)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    // Initialize version structure
+    memset(version, 0, sizeof(version_t));
+
+    // Simple version parsing - handles major.minor.patch format
+    char *version_copy = TINYPKG_STRDUP(version_str);
+    if (!version_copy)
+    {
+        return TINYPKG_ERROR_MEMORY;
+    }
+
+    char *token = strtok(version_copy, ".");
+    if (token)
+    {
+        version->major = atoi(token);
+        token = strtok(NULL, ".");
+        if (token)
+        {
+            version->minor = atoi(token);
+            token = strtok(NULL, ".");
+            if (token)
+            {
+                // Handle patch version and potential prerelease/build metadata
+                char *dash = strchr(token, '-');
+                char *plus = strchr(token, '+');
+
+                if (dash)
+                {
+                    *dash = '\0';
+                    version->patch = atoi(token);
+
+                    // Extract prerelease
+                    char *prerelease = dash + 1;
+                    if (plus)
+                    {
+                        *plus = '\0';
+                        strncpy(version->build_metadata, plus + 1,
+                                sizeof(version->build_metadata) - 1);
+                    }
+                    strncpy(version->prerelease, prerelease,
+                            sizeof(version->prerelease) - 1);
+                }
+                else if (plus)
+                {
+                    *plus = '\0';
+                    version->patch = atoi(token);
+                    strncpy(version->build_metadata, plus + 1,
+                            sizeof(version->build_metadata) - 1);
+                }
+                else
+                {
+                    version->patch = atoi(token);
+                }
+            }
+        }
+    }
+
+    TINYPKG_FREE(version_copy);
+    return TINYPKG_SUCCESS;
+}
+
+int version_compare(const version_t *a, const version_t *b)
+{
+    if (!a || !b)
+    {
+        return 0;
+    }
+
+    // Compare major version
+    if (a->major != b->major)
+    {
+        return a->major - b->major;
+    }
+
+    // Compare minor version
+    if (a->minor != b->minor)
+    {
+        return a->minor - b->minor;
+    }
+
+    // Compare patch version
+    if (a->patch != b->patch)
+    {
+        return a->patch - b->patch;
+    }
+
+    // Compare prerelease versions
+    if (strlen(a->prerelease) == 0 && strlen(b->prerelease) > 0)
+    {
+        return 1; // Normal version is greater than prerelease
+    }
+    if (strlen(a->prerelease) > 0 && strlen(b->prerelease) == 0)
+    {
+        return -1; // Prerelease is less than normal version
+    }
+    if (strlen(a->prerelease) > 0 && strlen(b->prerelease) > 0)
+    {
+        return strcmp(a->prerelease, b->prerelease);
+    }
+
+    return 0; // Versions are equal
+}
+
+char *version_to_string(const version_t *version)
+{
+    if (!version)
+    {
+        return NULL;
+    }
+
+    char *result = TINYPKG_MALLOC(128);
+    if (!result)
+    {
+        return NULL;
+    }
+
+    if (strlen(version->prerelease) > 0)
+    {
+        if (strlen(version->build_metadata) > 0)
+        {
+            snprintf(result, 128, "%d.%d.%d-%s+%s", version->major,
+                     version->minor, version->patch, version->prerelease,
+                     version->build_metadata);
+        }
+        else
+        {
+            snprintf(result, 128, "%d.%d.%d-%s", version->major, version->minor,
+                     version->patch, version->prerelease);
+        }
+    }
+    else if (strlen(version->build_metadata) > 0)
+    {
+        snprintf(result, 128, "%d.%d.%d+%s", version->major, version->minor,
+                 version->patch, version->build_metadata);
+    }
+    else
+    {
+        snprintf(result, 128, "%d.%d.%d", version->major, version->minor,
+                 version->patch);
+    }
+
+    return result;
+}
+
+int version_is_compatible(const version_t *required, const version_t *available)
+{
+    if (!required || !available)
+    {
+        return 0;
+    }
+
+    // For now, simple compatibility: available >= required
+    return version_compare(available, required) >= 0;
+}
+
+// Package utilities
+int package_get_installed_size(const char *package_name)
+{
+    if (!package_name)
+    {
+        return -1;
+    }
+
+    package_db_entry_t *entry = package_db_find(package_name);
+    if (!entry)
+    {
+        return -1;
+    }
+
+    return (int)entry->installed_size;
+}
+
+char **package_get_file_list(const char *package_name, int *count)
+{
+    char **file_list = NULL;
+    char file_list_path[MAX_PATH];
+    FILE *fp;
+    char line[MAX_PATH];
+    int allocated = 0;
+
+    if (!package_name || !count)
+    {
+        return NULL;
+    }
+
+    *count = 0;
+
+    // Try to read from a file list (this is a simplified implementation)
+    snprintf(file_list_path, sizeof(file_list_path), "%s/%s.files", LIB_DIR,
+             package_name);
+
+    fp = fopen(file_list_path, "r");
+    if (!fp)
+    {
+        log_warn("No file list found for package: %s", package_name);
+        return NULL;
+    }
+
+    allocated = 10;
+    file_list = TINYPKG_CALLOC(allocated, sizeof(char *));
+    if (!file_list)
+    {
+        fclose(fp);
+        return NULL;
+    }
+
+    while (fgets(line, sizeof(line), fp) && *count < allocated)
+    {
+        // Remove newline
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n')
+        {
+            line[len - 1] = '\0';
+        }
+
+        if (strlen(line) > 0)
+        {
+            file_list[*count] = TINYPKG_STRDUP(line);
+            if (!file_list[*count])
+            {
+                // Clean up on error
+                for (int i = 0; i < *count; i++)
+                {
+                    TINYPKG_FREE(file_list[i]);
+                }
+                TINYPKG_FREE(file_list);
+                fclose(fp);
+                *count = 0;
+                return NULL;
+            }
+            (*count)++;
+
+            // Reallocate if needed
+            if (*count >= allocated)
+            {
+                allocated *= 2;
+                char **new_list =
+                    TINYPKG_REALLOC(file_list, allocated * sizeof(char *));
+                if (!new_list)
+                {
+                    // Clean up on error
+                    for (int i = 0; i < *count; i++)
+                    {
+                        TINYPKG_FREE(file_list[i]);
+                    }
+                    TINYPKG_FREE(file_list);
+                    fclose(fp);
+                    *count = 0;
+                    return NULL;
+                }
+                file_list = new_list;
+            }
+        }
+    }
+
+    fclose(fp);
+    return file_list;
+}
+
+int package_owns_file(const char *file_path, char *owner_package,
+                      size_t owner_size)
+{
+    if (!file_path || !owner_package)
+    {
+        return 0;
+    }
+
+    // Ensure database is loaded
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
+        return 0;
+    }
+
+    // Check each installed package's file list
+    package_db_entry_t *entry = package_db_head;
+    while (entry)
+    {
+        int file_count = 0;
+        char **files = package_get_file_list(entry->name, &file_count);
+
+        if (files)
+        {
+            for (int i = 0; i < file_count; i++)
+            {
+                if (strcmp(files[i], file_path) == 0)
+                {
+                    strncpy(owner_package, entry->name, owner_size - 1);
+                    owner_package[owner_size - 1] = '\0';
+
+                    // Free file list
+                    for (int j = 0; j < file_count; j++)
+                    {
+                        TINYPKG_FREE(files[j]);
+                    }
+                    TINYPKG_FREE(files);
+                    return 1;
+                }
+            }
+
+            // Free file list
+            for (int i = 0; i < file_count; i++)
+            {
+                TINYPKG_FREE(files[i]);
+            }
+            TINYPKG_FREE(files);
+        }
+
+        entry = entry->next;
+    }
+
+    return 0;
+}
+
+int package_backup_config_files(const package_t *pkg)
+{
+    if (!pkg)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    // Simplified implementation - just log for now
+    log_info("Backing up config files for package: %s", pkg->name);
+
+    // In a real implementation, you would:
+    // 1. Identify configuration files (usually in /etc)
+    // 2. Create backup copies with timestamps
+    // 3. Store backup locations for later restoration
+
+    return TINYPKG_SUCCESS;
+}
+
+int package_restore_config_files(const package_t *pkg)
+{
+    if (!pkg)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    // Simplified implementation - just log for now
+    log_info("Restoring config files for package: %s", pkg->name);
+
+    // In a real implementation, you would:
+    // 1. Check if backup files exist
+    // 2. Compare current config files with backups
+    // 3. Offer to restore or merge configurations
+    // 4. Handle conflicts appropriately
+
+    return TINYPKG_SUCCESS;
+}
+
+int package_verify_integrity(const char *package_name)
+{
+    if (!package_name)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    package_t *pkg = package_load_info(package_name);
+    if (!pkg)
+    {
+        log_error("Failed to load package information: %s", package_name);
+        return TINYPKG_ERROR;
+    }
+
+    // Basic integrity check - verify package files exist
+    int file_count = 0;
+    char **files = package_get_file_list(package_name, &file_count);
+    int missing_files = 0;
+
+    if (files)
+    {
+        for (int i = 0; i < file_count; i++)
+        {
+            if (!utils_file_exists(files[i]))
+            {
+                log_warn("Missing file: %s", files[i]);
+                missing_files++;
+            }
+            TINYPKG_FREE(files[i]);
+        }
+        TINYPKG_FREE(files);
+    }
+
+    package_free(pkg);
+
+    if (missing_files > 0)
+    {
+        log_error("Package '%s' has %d missing files", package_name,
+                  missing_files);
+        return TINYPKG_ERROR;
+    }
+
+    log_info("Package '%s' integrity check passed", package_name);
+    return TINYPKG_SUCCESS;
+}
+
+// Package statistics
+int package_get_stats(package_stats_t *stats)
+{
+    if (!stats)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    memset(stats, 0, sizeof(package_stats_t));
+
+    if (package_db_load() != TINYPKG_SUCCESS)
+    {
+        return TINYPKG_ERROR;
+    }
+
+    package_db_entry_t *entry = package_db_head;
+    while (entry)
+    {
+        stats->total_packages++;
+        if (entry->state == PKG_STATE_INSTALLED)
+        {
+            stats->installed_packages++;
+        }
+        if (entry->state == PKG_STATE_BROKEN)
+        {
+            stats->broken_packages++;
+        }
+        stats->total_installed_size += entry->installed_size;
+        entry = entry->next;
+    }
+
+    // Get last update time from database file
+    char db_file[MAX_PATH];
+    snprintf(db_file, sizeof(db_file), "%s/installed.txt", LIB_DIR);
+
+    struct stat st;
+    if (stat(db_file, &st) == 0)
+    {
+        stats->last_update = st.st_mtime;
+    }
+
+    return TINYPKG_SUCCESS;
+}
+
+void package_print_stats(const package_stats_t *stats)
+{
+    if (!stats)
+    {
+        return;
+    }
+
+    printf("Package Statistics:\n");
+    printf("  Total packages: %d\n", stats->total_packages);
+    printf("  Installed packages: %d\n", stats->installed_packages);
+    printf("  Available packages: %d\n", stats->available_packages);
+    printf("  Broken packages: %d\n", stats->broken_packages);
+    printf("  Total installed size: ");
+    utils_format_size(stats->total_installed_size);
+    printf("\n");
+
+    if (stats->last_update > 0)
+    {
+        printf("  Last update: ");
+        utils_format_time(stats->last_update);
+        printf("\n");
+    }
 }
